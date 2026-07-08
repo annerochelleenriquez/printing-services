@@ -1,0 +1,550 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ USER MODELS ============
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  role          Role      @default(CUSTOMER)
+  
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  addresses     Address[]
+  orders        Order[]
+  cart          Cart?
+  wishlist      Wishlist?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([email])
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+  SUPER_ADMIN
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?
+  access_token       String?
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============ PRODUCT MODELS ============
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  image       String?
+  
+  products    Product[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([slug])
+}
+
+model Product {
+  id            String    @id @default(cuid())
+  name          String
+  slug          String    @unique
+  description   String?
+  categoryId    String
+  category      Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  
+  basePrice     Float     // Starting price
+  image         String
+  images        String[]  // Array of image URLs
+  
+  // Customization options
+  sizes         Size[]
+  paperTypes    PaperType[]
+  finishes      Finish[]
+  
+  // Variants for different options combinations
+  variants      ProductVariant[]
+  
+  // Relations
+  orderItems    OrderItem[]
+  cartItems     CartItem[]
+  wishlistItems WishlistItem[]
+  
+  inStock       Boolean   @default(true)
+  featured      Boolean   @default(false)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([categoryId])
+  @@index([slug])
+}
+
+model Size {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  name        String    // e.g., "A4", "A5", "5x7 inches"
+  width       Float     // in mm
+  height      Float     // in mm
+  
+  variants    ProductVariant[]
+  
+  @@unique([productId, name])
+  @@index([productId])
+}
+
+model PaperType {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  name        String    // e.g., "Glossy", "Matte", "Cardstock"
+  priceModifier Float   @default(0) // Additional price
+  
+  variants    ProductVariant[]
+  
+  @@unique([productId, name])
+  @@index([productId])
+}
+
+model Finish {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  name        String    // e.g., "Glossy", "Matte", "Textured"
+  priceModifier Float   @default(0)
+  
+  variants    ProductVariant[]
+  
+  @@unique([productId, name])
+  @@index([productId])
+}
+
+model ProductVariant {
+  id            String    @id @default(cuid())
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  sizeId        String
+  size          Size      @relation(fields: [sizeId], references: [id])
+  
+  paperTypeId   String
+  paperType     PaperType @relation(fields: [paperTypeId], references: [id])
+  
+  finishId      String
+  finish        Finish    @relation(fields: [finishId], references: [id])
+  
+  pricePerUnit  Float     // Price per unit for this variant
+  minQuantity   Int       @default(1)
+  
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  
+  @@unique([productId, sizeId, paperTypeId, finishId])
+  @@index([productId])
+}
+
+// ============ CART & WISHLIST ============
+
+model Cart {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  items     CartItem[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model CartItem {
+  id          String    @id @default(cuid())
+  cartId      String
+  cart        Cart      @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  
+  variantId   String?
+  variant     ProductVariant? @relation(fields: [variantId], references: [id])
+  
+  quantity    Int       @default(1)
+  
+  // Customization options
+  isDoubleSided Boolean @default(false)
+  isFullColor   Boolean @default(true)
+  specialInstructions String?
+  uploadedFileId String?
+  uploadedFile UploadedFile? @relation(fields: [uploadedFileId], references: [id])
+  
+  addedAt     DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([cartId, productId, variantId])
+  @@index([cartId])
+  @@index([productId])
+}
+
+model Wishlist {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  items     WishlistItem[]
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model WishlistItem {
+  id        String    @id @default(cuid())
+  wishlistId String
+  wishlist  Wishlist  @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  
+  productId String
+  product   Product   @relation(fields: [productId], references: [id])
+  
+  addedAt   DateTime  @default(now())
+
+  @@unique([wishlistId, productId])
+  @@index([wishlistId])
+}
+
+// ============ ADDRESS ============
+
+model Address {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name          String    // Address label (e.g., "Home", "Office")
+  firstName     String
+  lastName      String
+  phone         String
+  email         String
+  
+  street        String
+  city          String
+  state         String
+  postalCode    String
+  country       String
+  
+  isDefault     Boolean   @default(false)
+  
+  orders        Order[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// ============ ORDER MODELS ============
+
+model Order {
+  id              String    @id @default(cuid())
+  orderNumber     String    @unique // e.g., "ORD-2024-001"
+  
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  
+  // Shipping
+  shippingAddressId String
+  shippingAddress Address  @relation(fields: [shippingAddressId], references: [id])
+  
+  deliveryMethod  DeliveryMethod @default(DELIVERY)
+  pickupLocation  String?   // Store location for pickup
+  
+  // Items
+  items           OrderItem[]
+  
+  // Pricing
+  subtotal        Float
+  shippingFee     Float     @default(0)
+  tax             Float     @default(0)
+  discountAmount  Float     @default(0)
+  couponId        String?
+  coupon          Coupon?   @relation(fields: [couponId], references: [id])
+  total           Float
+  
+  // Status & Tracking
+  status          OrderStatus @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING)
+  
+  // Payment
+  payment         Payment?
+  
+  // Dates
+  estimatedDelivery DateTime?
+  actualDelivery    DateTime?
+  
+  // Notes
+  customerNotes   String?
+  adminNotes      String?
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([orderNumber])
+  @@index([status])
+}
+
+enum DeliveryMethod {
+  DELIVERY
+  PICKUP
+}
+
+enum OrderStatus {
+  PENDING
+  PAYMENT_PENDING
+  ARTWORK_REVIEW
+  PRINTING
+  QUALITY_CHECK
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model OrderItem {
+  id            String    @id @default(cuid())
+  orderId       String
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  
+  variantId     String?
+  variant       ProductVariant? @relation(fields: [variantId], references: [id])
+  
+  quantity      Int
+  pricePerUnit  Float
+  subtotal      Float
+  
+  // Customization
+  isDoubleSided Boolean @default(false)
+  isFullColor   Boolean @default(true)
+  specialInstructions String?
+  
+  // Uploaded file
+  uploadedFileId String?
+  uploadedFile  UploadedFile? @relation(fields: [uploadedFileId], references: [id])
+  
+  createdAt     DateTime  @default(now())
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+// ============ PAYMENT ============
+
+model Payment {
+  id              String    @id @default(cuid())
+  orderId         String    @unique
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  method          PaymentMethod
+  
+  stripePaymentIntentId String?
+  stripePriceInCents    Int?
+  
+  bankTransferRef String?
+  
+  status          PaymentStatus @default(PENDING)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([orderId])
+}
+
+enum PaymentMethod {
+  STRIPE
+  BANK_TRANSFER
+  CASH_ON_PICKUP
+}
+
+// ============ FILE UPLOAD ============
+
+model UploadedFile {
+  id            String    @id @default(cuid())
+  originalName  String
+  fileName      String    @unique
+  fileSize      Int
+  fileType      String    // MIME type
+  url           String
+  cloudinaryId  String?   // For Cloudinary
+  
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  
+  createdAt     DateTime  @default(now())
+
+  @@index([fileName])
+}
+
+// ============ COUPON ============
+
+model Coupon {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  description     String?
+  
+  discountType    DiscountType
+  discountValue   Float     // Percentage (0-100) or fixed amount
+  
+  minOrderAmount  Float?    // Minimum order amount to apply
+  maxUses         Int?      // Total uses allowed (null = unlimited)
+  currentUses     Int       @default(0)
+  
+  usagePerUser    Int       @default(1) // Max uses per customer
+  
+  active          Boolean   @default(true)
+  expiresAt       DateTime?
+  
+  orders          Order[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([code])
+  @@index([active])
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+// ============ SHIPPING ============
+
+model ShippingZone {
+  id              String    @id @default(cuid())
+  name            String    // e.g., "Local", "National", "International"
+  countries       String[]  // ISO country codes
+  baseFee         Float
+  perKgFee        Float     @default(0)
+  estimatedDays   Int       // Delivery time estimate
+  
+  active          Boolean   @default(true)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model PickupLocation {
+  id              String    @id @default(cuid())
+  name            String
+  address         String
+  city            String
+  phone           String
+  email           String
+  
+  openingHours    String    // e.g., "9:00 AM - 5:00 PM"
+  notes           String?
+  
+  active          Boolean   @default(true)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// ============ SETTINGS ============
+
+model StoreSettings {
+  id              String    @id @default(cuid())
+  
+  // Business Info
+  businessName    String
+  businessEmail   String
+  businessPhone   String
+  businessAddress String
+  
+  // Store Hours
+  openingTime     String    @default("9:00 AM")
+  closingTime     String    @default("5:00 PM")
+  
+  // Social Media
+  facebook        String?
+  instagram       String?
+  twitter         String?
+  linkedin        String?
+  
+  // Payment Settings
+  stripePublicKey String?
+  stripeSecretKey String?
+  
+  // Tax Settings
+  taxRate         Float     @default(0)
+  
+  // Email Settings
+  adminEmails     String[]  @default([])
+  
+  updatedAt       DateTime  @updatedAt
+}
